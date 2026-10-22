@@ -1,4 +1,19 @@
 import argparse
+import sys
+import json
+import models
+
+
+def load_funtions(path: str) -> list:
+    try:
+        with open(path) as f:
+            data = json.load(f)
+
+    except FileNotFoundError and ValueError as e:
+        print ("Error: {e}")
+
+
+
 
 
 def main() -> None:
@@ -35,3 +50,9 @@ def main() -> None:
 
 
     # 3. Esas rutas se las pasamos a nuestras funciones que usan Pydantic
+    try:
+        functions = load_functions(args.funtions_definition)
+
+    except Exception as e: 
+        print(f"Error: {e}")
+        sys.exit(1)
