@@ -61,7 +61,7 @@ def main() -> None:
 
     # 3. Esas rutas se las pasamos a nuestras funciones que usan Pydantic
     try:
-        functions = load_functions(args.funtions_definition)
+        functions = load_functions(args.functions_definition)
         natural_text = load_natural_text(args.input)
 
         print("todo leido y guardado")
