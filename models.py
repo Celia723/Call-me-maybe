@@ -4,7 +4,8 @@ from pydantic import BaseModel
 class FunctionDefinition(BaseModel):
     name: str
     description: str
-    parameters: dict
+    parameters: dict[str, Any]
+    returns: dict[str, Any]
 
 
 class FunctionCalling(BaseModel):
