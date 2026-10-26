@@ -2,7 +2,7 @@ import argparse
 import sys
 import json
 import models
-
+from llm_sdk/__init__ import Small_LLM_Model
 
 def load_functions(path: str) -> list:
 
@@ -73,6 +73,32 @@ def main() -> None:
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
+
+
+    #creamos el objeto SDK y le pasamos el texto plano y el dict
+    sdk = Small_LLM_Model()
+
+    # 1. Convertimos la lista de funciones Pydantic a una lista de diccionarios puros
+    dict_functions = [f.model_dump() for f in functions]
+
+    # 2. CONVERTIMOS LOS DICCIONARIOS A STRING: 
+    # json.dumps() coge la lista de diccionarios y la convierte en un gran texto con formato JSON
+    functions_str = json.dumps(dict_functions, indent=2)
+
+    for text in natural_text:
+        prompt_text = text.prompt
+
+        print(f"\n--- Procesando prompt: {prompt_text} ---")
+
+        #ahora q lo tenemos se lo pasamos al sdk JUNTO
+        full_prompt = f"Funciones:\n{functions_str}\n\nPregunta: {prompt_text}"
+        input_tensor = sdk.encode(full_prompt)
+      
+        #calculamos el siguiente loggit
+        logits = sdk.get_logits_from_input_ids(input_tensor)
+
+
+
 
 if __name__ == "__main__":
     main()
