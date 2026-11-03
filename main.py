@@ -3,6 +3,7 @@ import sys
 import json
 import models
 from llm_sdk/__init__ import Small_LLM_Model
+from logits import apply_mascara
 
 def load_functions(path: str) -> list:
 
@@ -85,6 +86,22 @@ def main() -> None:
     # json.dumps() coge la lista de diccionarios y la convierte en un gran texto con formato JSON
     functions_str = json.dumps(dict_functions, indent=2)
 
+     #sacamos del diccionario los ids de los qsi valen en general
+    id_open_key = sdk.tokenizer.encode("{", add_special_tokens=False)[0]
+    id_closed_key = sdk.tokenizer.encode("}", add_special_tokens=False)[0]
+    id_open_corchete = sdk.tokenizer.encode("[", add_special_tokens=False)[0]
+    id_closed_corchete = sdk.tokenizer.encode("]", add_special_tokens=False)[0]
+    id_comilla = sdk.tokenizer.encode('"', add_special_tokens=False)[0]
+    id_dos_puntos = sdk.tokenizer.encode(':', add_special_tokens=False)[0]
+    id_coma = sdk.tokenizer.encode(',', add_special_tokens=False)[0]
+    id_punto = sdk.tokenizer.encode('.', add_special_tokens=False)[0]
+    id_prompt = sdk.tokenizer.encode('prompt', add_special_tokens=False)[0]
+    id_name = sdk.tokenizer.encode('name', add_special_tokens=False)[0]
+    id_parameter = sdk.tokenizer.encode('parameter', add_special_tokens=False)[0]
+
+    allowed_ids = [
+        id_open_key, id_closed_key, id_open_corchete, id_closed_corchete, id_comilla, id_coma, id_dos_puntos, id_punto, id_prompt, id_name, id_parameter]
+
     for text in natural_text:
         prompt_text = text.prompt
 
@@ -93,9 +110,23 @@ def main() -> None:
         #ahora q lo tenemos se lo pasamos al sdk JUNTO
         full_prompt = f"Funciones:\n{functions_str}\n\nPregunta: {prompt_text}"
         input_tensor = sdk.encode(full_prompt)
+        
       
-        #calculamos el siguiente loggit
-        logits = sdk.get_logits_from_input_ids(input_tensor)
+        for step in range(max_tokens):
+            #Sacas las notas (logits) de lo que llevas hasta ahora
+            logits = sdk.get_logits_from_input_ids(input_tensor)
+
+
+            #aplicamos los menos infinitos a la lista de loggits menos a los bien
+            restricted_logits = apply_mascara(logits, allowed_ids)
+
+            #cogemos el mejor de los logits sobrantes. el siguiente token(te devuelve un número / ID)
+
+            #pegamos ese numero del loggit elegido AL TENSOR ANTERIOR
+
+            # 6. Condición de parada si el modelo decide terminar
+            if es_fin(next_token_id):
+                break
 
 
 
