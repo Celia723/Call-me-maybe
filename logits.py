@@ -15,3 +15,6 @@ def apply_mascara(logits: list[float], ids_permitidos: list[int]) -> np.ndarray:
     logits_mascarados[ids_permitidos] = logits_arr[ids_permitidos]
     
     return logits_mascarados
+
+
+def token_selection() -> int:

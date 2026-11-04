@@ -121,7 +121,7 @@ def main() -> None:
             restricted_logits = apply_mascara(logits, allowed_ids)
 
             #cogemos el mejor de los logits sobrantes. el siguiente token(te devuelve un número / ID)
-
+            next_token_id = token_selection(restricted_logits)
             #pegamos ese numero del loggit elegido AL TENSOR ANTERIOR
 
             # 6. Condición de parada si el modelo decide terminar
