@@ -86,44 +86,56 @@ def main() -> None:
     # json.dumps() coge la lista de diccionarios y la convierte en un gran texto con formato JSON
     functions_str = json.dumps(dict_functions, indent=2)
 
-     #sacamos del diccionario los ids de los qsi valen en general
-    id_open_key = sdk.tokenizer.encode("{", add_special_tokens=False)[0]
-    id_closed_key = sdk.tokenizer.encode("}", add_special_tokens=False)[0]
-    id_open_corchete = sdk.tokenizer.encode("[", add_special_tokens=False)[0]
-    id_closed_corchete = sdk.tokenizer.encode("]", add_special_tokens=False)[0]
-    id_comilla = sdk.tokenizer.encode('"', add_special_tokens=False)[0]
-    id_dos_puntos = sdk.tokenizer.encode(':', add_special_tokens=False)[0]
-    id_coma = sdk.tokenizer.encode(',', add_special_tokens=False)[0]
-    id_punto = sdk.tokenizer.encode('.', add_special_tokens=False)[0]
-    id_prompt = sdk.tokenizer.encode('prompt', add_special_tokens=False)[0]
-    id_name = sdk.tokenizer.encode('name', add_special_tokens=False)[0]
-    id_parameter = sdk.tokenizer.encode('parameter', add_special_tokens=False)[0]
-
-    allowed_ids = [
-        id_open_key, id_closed_key, id_open_corchete, id_closed_corchete, id_comilla, id_coma, id_dos_puntos, id_punto, id_prompt, id_name, id_parameter]
-
+    
     for text in natural_text:
         prompt_text = text.prompt
 
         print(f"\n--- Procesando prompt: {prompt_text} ---")
 
+         #sacamos del diccionario los ids de los qsi valen en general
+            id_open_key = sdk.tokenizer.encode("{", add_special_tokens=False)[0]
+            id_closed_key = sdk.tokenizer.encode("}", add_special_tokens=False)[0]
+            id_open_corchete = sdk.tokenizer.encode("[", add_special_tokens=False)[0]
+            id_closed_corchete = sdk.tokenizer.encode("]", add_special_tokens=False)[0]
+            id_comilla = sdk.tokenizer.encode('"', add_special_tokens=False)[0]
+            id_dos_puntos = sdk.tokenizer.encode(':', add_special_tokens=False)[0]
+            id_coma = sdk.tokenizer.encode(',', add_special_tokens=False)[0]
+            id_punto = sdk.tokenizer.encode('.', add_special_tokens=False)[0]
+            id_prompt = sdk.tokenizer.encode('prompt', add_special_tokens=False)[0]
+            id_name = sdk.tokenizer.encode('name', add_special_tokens=False)[0]
+            id_parameter = sdk.tokenizer.encode('parameter', add_special_tokens=False)[0]
+        
+            allowed_ids = [
+                id_open_key, id_closed_key, id_open_corchete, id_closed_corchete, id_comilla, id_coma, id_dos_puntos, id_punto, id_prompt, id_name, id_parameter]
+        
+
         #ahora q lo tenemos se lo pasamos al sdk JUNTO
         full_prompt = f"Funciones:\n{functions_str}\n\nPregunta: {prompt_text}"
         input_tensor = sdk.encode(full_prompt)
         
-      
-        for step in range(max_tokens):
+      #YA TENEMOS EL PROMT ENTERO , AHORA CALCULAMOS TODOS LOS TOKENS SIGUIIENTES
+        choosen_tokens = []
+        for step in range(200):
             #Sacas las notas (logits) de lo que llevas hasta ahora
             logits = sdk.get_logits_from_input_ids(input_tensor)
 
+            #miro a ver los tokens q vamos acumuulando y lo traduzco para coger mejor el siguiente token
+            transalation_tokens = sdk.decode()
 
+            if transalation_tokens.endswith('"name":') or
+                transalation_tokens.endswith('"description":') or
+                transalation_tokens.endswith('"parameters":'):
+
+                 
+            allowed_ids = #se recalcula
             #aplicamos los menos infinitos a la lista de loggits menos a los bien
             restricted_logits = apply_mascara(logits, allowed_ids)
 
             #cogemos el mejor de los logits sobrantes. el siguiente token(te devuelve un número / ID)
             next_token_id = token_selection(restricted_logits)
             #pegamos ese numero del loggit elegido AL TENSOR ANTERIOR
-
+            input_tensor.append(next_token_id)
+            choosen_tokens.append(next_token_id)
             # 6. Condición de parada si el modelo decide terminar
             if es_fin(next_token_id):
                 break
