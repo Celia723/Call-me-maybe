@@ -17,4 +17,12 @@ def apply_mascara(logits: list[float], ids_permitidos: list[int]) -> np.ndarray:
     return logits_mascarados
 
 
-def token_selection() -> int:
+def get_allowed_ids(translation_tokens: str, tokenizer, valid_functions: list) -> list:
+    # 1. State: Just opened a quote for a string value (e.g. after '"name": "')
+    # Allowed: All alphanumeric tokens + spaces + the closing quote '"'
+    
+    # 2. State: Just closed a value with a quote (e.g. ends with '"')
+    # Allowed: Syntax transition tokens -> comma (','), colon (':'), or closing brace ('}')
+    
+    # 3. State: Inside parameters object
+    # Allowed: Parameter names defined in your Pydantic schemas
