@@ -1,10 +1,11 @@
 from logits import apply_mascara, get_allowed_ids
 import numpy as np
 from typing import Any
+from models import FunctionCalling
 
 
 def make_all_tokens(
-    natural_text: str,
+    natural_text: list[FunctionCalling],
     functions_str: str,
     sdk: Any
 ) -> str:
