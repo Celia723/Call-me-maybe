@@ -8,10 +8,22 @@ dependencies = [
     "torch",
     "transformers",
     "huggingface-hub",
+    "tqdm",
 ]
 
 [project.optional-dependencies]
 dev = ["flake8", "mypy"]
 
 [tool.mypy]
-exclude = ["^\\.venv/"]
+exclude = ["^\\.venv/", "^llm_sdk"]
+
+
+#intentar descargar del torch solo lo del cpu
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

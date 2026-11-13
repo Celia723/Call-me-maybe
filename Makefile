@@ -1,3 +1,8 @@
+# Forzar exportación global al sGoinfre para evitar llenar el Home
+export UV_CACHE_DIR = /sgoinfre/$(USER)/uv-cache
+export HF_HOME = /sgoinfre/$(USER)/hf
+export UV_LINK_MODE = copy
+
 VENV = .venv
 
 .PHONY: install run debug clean lint lint-strict

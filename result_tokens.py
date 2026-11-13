@@ -1,5 +1,6 @@
 from logits import apply_mascara, get_allowed_ids
 import numpy as np
+import tqdm
 from typing import Any
 from models import FunctionCalling
 
@@ -15,7 +16,7 @@ def make_all_tokens(
     """
     result = ""
 
-    for text in natural_text:
+    for text in tqdm(natural_text, desc="🚀 Creating the solution"):
         prompt_text = text.prompt
 
         print(f"\n--- Procesando prompt: {prompt_text} ---")
@@ -24,7 +25,7 @@ def make_all_tokens(
         full_prompt = (
             f"Funciones:\n{functions_str}\n\nPregunta: {prompt_text}"
         )
-        input_tensor = sdk.encode(full_prompt)
+        input_tensor = (sdk.encode(full_prompt)).tolist()
 
         # YA TENEMOS EL PROMPT ENTERO, AHORA CALCULAMOS LOS TOKENS
         choosen_tokens: list[int] = []
@@ -64,3 +65,4 @@ def make_all_tokens(
                 break
 
     return result
+    
