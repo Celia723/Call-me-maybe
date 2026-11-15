@@ -1,41 +1,40 @@
-# Forzar exportación global al sGoinfre para evitar llenar el Home
-export UV_CACHE_DIR = /sgoinfre/$(USER)/uv-cache
-export HF_HOME = /sgoinfre/$(USER)/hf
-export UV_LINK_MODE = copy
+.DEFAULT_GOAL := install
 
-VENV = .venv
+ifneq ($(wildcard /goinfre/$(USER)),)
+SGOINFRE ?= /goinfre/$(USER)
+else
+SGOINFRE ?= $(CURDIR)/.cache
+endif
 
-.PHONY: install run debug clean lint lint-strict
+VENV_DIR ?= $(SGOINFRE)/venvs/call-me-maybe
+PYTHON ?= python3
 
-install:
-	@export UV_CACHE_DIR=/goinfre/$USER/uv-cache
-	@export HF_HOME=/goinfre/$USER/hf
-	@command -v uv >/dev/null 2>&1 || { \
-		echo "❌ uv no está instalado ni en el PATH."; \
-		echo "   Instálalo primero (mira el README)."; \
-		exit 1; \
-	}
-	@echo "🛠️ Creando entorno virtual e instalando dependencias..."
-	uv sync --extra dev
+export PATH := $(HOME)/.local/bin:$(PATH)
+export UV_CACHE_DIR ?= $(SGOINFRE)/uv-cache
+export MYPY_CACHE_DIR ?= $(SGOINFRE)/mypy-cache
+export UV_LINK_MODE := copy
+export UV_PROJECT_ENVIRONMENT := $(VENV_DIR)
+export HF_HOME ?= $(SGOINFRE)/huggingface_cache
+export HF_HUB_CACHE ?= $(HF_HOME)/hub
+export HF_DATASETS_CACHE ?= $(HF_HOME)/datasets
+export HF_HUB_VERBOSITY := error
+export TMPDIR := $(SGOINFRE)/tmp
 
-run:
-	uv run python -m src
+.PHONY: install run debug clean lint lint-strict prepare
 
-debug:
-	uv run python -m pdb -m src
+prepare:
+	mkdir -p "$(UV_CACHE_DIR)" "$(HF_HUB_CACHE)" "$(HF_DATASETS_CACHE)" \
+		"$(TMPDIR)" "$(dir $(VENV_DIR))" "$(MYPY_CACHE_DIR)"
 
-clean:
-	find . -type d -name "__pycache__" -not -path "./$(VENV)/*" -prune -exec rm -rf {} +
-	find . -type d -name ".mypy_cache" -prune -exec rm -rf {} +
-	find . -type d -name ".pytest_cache" -prune -exec rm -rf {} +
-	find . -type f -name "*.pyc" -not -path "./$(VENV)/*" -delete
+install: prepare
+	uv sync --extra dev --python "$(PYTHON)"
 
-lint:
-	uv run flake8 .
-	uv run mypy . --warn-return-any --warn-unused-ignores \
-		--ignore-missing-imports --disallow-untyped-defs \
-		--check-untyped-defs
+run: prepare
+	uv run --python "$(PYTHON)" python -u main.py \
+		--functions_definition "data/input/functions_definition.json" \
+		--input "data/input/function_calling_tests.json" \
+		--output "data/output/function_calling_results.json"
 
-lint-strict:
-	uv run flake8 .
-	uv run mypy . --strict
+debug: prepare
+	uv run --python "$(PYTHON)" python -m pdb main.py \
+		--functions_definition

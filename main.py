@@ -4,6 +4,7 @@ import json
 from llm_sdk import Small_LLM_Model
 from parse import load_functions, load_natural_text
 from result_tokens import make_all_tokens
+import os
 
 
 def main() -> None:
@@ -69,6 +70,10 @@ def main() -> None:
     #   3. Creamos l srespuesta a partir de los tokens
     result = make_all_tokens(natural_text, functions_str, sdk)
 
+    #   creamos la carpeta de salida si no existe:
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     #   lo escribimos en la ruta
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)

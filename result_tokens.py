@@ -1,8 +1,8 @@
-from logits import apply_mascara, get_allowed_ids
 import numpy as np
-import tqdm
+from tqdm import tqdm
 from typing import Any
 from models import FunctionCalling
+from logit_masking import apply_mascara
 
 
 def make_all_tokens(
@@ -29,9 +29,9 @@ def make_all_tokens(
 
         # YA TENEMOS EL PROMPT ENTERO, AHORA CALCULAMOS LOS TOKENS
         choosen_tokens: list[int] = []
-        for step in range(200):
+        for _ in range(200):
             # 1. Sacamos las notas (logits) del paso actual
-            logits = sdk.get_logits_from_input_ids(input_tensor)
+            logits = sdk.get_logits_from_input_ids(input_tensor[0])
 
             # 2. Decodificamos lo generado hasta ahora
             translation_tokens = sdk.decode(choosen_tokens)
@@ -46,11 +46,8 @@ def make_all_tokens(
                 next_token_id = int(np.argmax(logits))
             else:
                 # ESTADO RESTRINGIDO: Forzamos la sintaxis con máscara
-                allowed_ids = get_allowed_ids(
-                    translation_tokens,
-                    sdk.tokenizer
-                )
-                restricted_logits = apply_mascara(logits, allowed_ids)
+                restricted_logits = apply_mascara(
+                    sdk, logits, translation_tokens)
 
                 # Seleccionamos el token más alto permitido
                 next_token_id = int(np.argmax(restricted_logits))
@@ -60,7 +57,7 @@ def make_all_tokens(
             choosen_tokens.append(next_token_id)
 
             # 5. Condición de parada (EOS token)
-            if next_token_id == sdk.tokenizer.eos_token_id:
+            if next_token_id in (151643, 151645):
                 result += str(choosen_tokens) + "\n"
                 break
 
