@@ -2,7 +2,7 @@ import numpy as np
 from tqdm import tqdm
 from typing import Any
 from models import FunctionCalling
-from logit_masking import apply_mascara
+from logit_masking import apply_mascara, get_structure_ids
 
 
 def make_all_tokens(
@@ -15,6 +15,7 @@ def make_all_tokens(
     natural language with all the functions in a str format.
     """
     result = ""
+    structure_ids = get_structure_ids(sdk)
 
     for text in tqdm(natural_text, desc="🚀 Creating the solution"):
         prompt_text = text.prompt
@@ -29,7 +30,7 @@ def make_all_tokens(
 
         # YA TENEMOS EL PROMPT ENTERO, AHORA CALCULAMOS LOS TOKENS
         choosen_tokens: list[int] = []
-        for _ in range(200):
+        for _ in range(45):
             # 1. Sacamos las notas (logits) del paso actual
             logits = sdk.get_logits_from_input_ids(input_tensor[0])
 
@@ -47,7 +48,7 @@ def make_all_tokens(
             else:
                 # ESTADO RESTRINGIDO: Forzamos la sintaxis con máscara
                 restricted_logits = apply_mascara(
-                    sdk, logits, translation_tokens)
+                    sdk, logits, translation_tokens, structure_ids)
 
                 # Seleccionamos el token más alto permitido
                 next_token_id = int(np.argmax(restricted_logits))
@@ -61,5 +62,6 @@ def make_all_tokens(
                 result += str(choosen_tokens) + "\n"
                 break
 
+    result = sdk.decode(choosen_tokens)
     return result
-    
+

@@ -19,34 +19,33 @@ def get_state(translation_tokens: str) -> list:
         return 1
 
 
+def get_structure_ids(sdk: Any) -> list[int]:
+    """Calcula los IDs estructurales una sola vez al inicio."""
+    return [
+        sdk.encode("{")[0],
+        sdk.encode("}")[0],
+        sdk.encode("[")[0],
+        sdk.encode("]")[0],
+        sdk.encode('"')[0],
+        sdk.encode(':')[0],
+        sdk.encode(',')[0],
+        sdk.encode('.')[0],
+        sdk.encode('prompt')[0],
+        sdk.encode('name')[0],
+        sdk.encode('parameter')[0]
+    ]
+
+
 def apply_mascara(
     sdk: Any,
     logits: list[float],
     translation_tokens: list[float],
+    structure_ids: list[int]
 ) -> np.ndarray:
     """Aplica una máscara de -infinito a todos los logits del vocabulario
 
     EXCEPTO a los índices que están en ids_permitidos, usando NumPy.
     """
-    id_open_key = sdk.encode("{")[0]
-    id_closed_key = sdk.encode("}")[0]
-    id_open_corchete = sdk.encode("[")[0]
-    id_closed_corchete = sdk.encode("]")[0]
-    id_comilla = sdk.encode('"')[0]
-    id_dos_puntos = sdk.encode(':')[0]
-    id_coma = sdk.encode(',')[0]
-    id_punto = sdk.encode('.')[0]
-    id_prompt = sdk.encode('prompt')[0]
-    id_name = sdk.encode('name')[0]
-    id_parameter = sdk.encode('parameter')[0]
-
-    structure_ids = [
-        id_open_key, id_closed_key, id_open_corchete,
-        id_closed_corchete, id_comilla, id_coma,
-        id_dos_puntos, id_punto, id_prompt,
-        id_name, id_parameter
-    ]
-    
     # 1. Convertimos la lista de logits a un array de NumPy
     logits_arr = np.array(logits, dtype=float)
 

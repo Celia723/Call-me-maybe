@@ -38,3 +38,11 @@ run: prepare
 debug: prepare
 	uv run --python "$(PYTHON)" python -m pdb main.py \
 		--functions_definition
+
+clean:
+	rm -rf "$(VENV_DIR)"
+	rm -rf "$(UV_CACHE_DIR)"
+	rm -rf "$(MYPY_CACHE_DIR)"
+	rm -rf "$(TMPDIR)"
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
