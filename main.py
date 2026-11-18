@@ -3,7 +3,7 @@ import sys
 import json
 from llm_sdk import Small_LLM_Model
 from parse import load_functions, load_natural_text
-from result_tokens import make_all_tokens
+from result_tokens import make_constrained_generation
 import os
 
 
@@ -62,13 +62,19 @@ def main() -> None:
     # lista de diccionarios puros
     dict_functions = [f.model_dump() for f in functions]
 
+    functions_names = [x["name"] for x in dict_functions]
     # 2. CONVERTIMOS LOS DICCIONARIOS A STRING:
     # json.dumps() coge la lista de diccionarios y la
     # convierte en un gran texto con formato JSON
     functions_str = json.dumps(dict_functions, indent=2)
 
     #   3. Creamos l srespuesta a partir de los tokens
-    result = make_all_tokens(natural_text, functions_str, sdk)
+    result = make_constrained_generation(
+                                        natural_text,
+                                        functions_str,
+                                        functions_names,
+                                        sdk
+                                    )
 
     #   creamos la carpeta de salida si no existe:
     output_dir = os.path.dirname(args.output)

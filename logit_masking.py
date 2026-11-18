@@ -1,64 +1,42 @@
+
 import numpy as np
-from typing import Any
 
 
-def get_state(translation_tokens: str) -> list:
-    """Determina dinámicamente qué token IDs están permitidos según
-
-    el estado sintáctico del texto generado hasta el momento.
-    """
-    # 2. Contamos comillas dobles para saber si estamos DENTRO o FUERA
-    num_comillas = translation_tokens.count('"')
-
-    # Si ve que no hay comillas abiertas
-    if num_comillas % 2 == 0:
-        #   Devuelve 0: la mascara con tokens de estructura
-        return 0
-    else:
-        #   Devuelve 1: las mascara con todos los tokens MENOS los de estructura
-        return 1
-
-
-def get_structure_ids(sdk: Any) -> list[int]:
-    """Calcula los IDs estructurales una sola vez al inicio."""
-    return [
-        sdk.encode("{")[0],
-        sdk.encode("}")[0],
-        sdk.encode("[")[0],
-        sdk.encode("]")[0],
-        sdk.encode('"')[0],
-        sdk.encode(':')[0],
-        sdk.encode(',')[0],
-        sdk.encode('.')[0],
-        sdk.encode('prompt')[0],
-        sdk.encode('name')[0],
-        sdk.encode('parameter')[0]
-    ]
-
-
-def apply_mascara(
-    sdk: Any,
+def mask_logits(
     logits: list[float],
-    translation_tokens: list[float],
-    structure_ids: list[int]
+    allowed_token_ids: list[int]
 ) -> np.ndarray:
-    """Aplica una máscara de -infinito a todos los logits del vocabulario
+    """Allow only the specified token IDs."""
 
-    EXCEPTO a los índices que están en ids_permitidos, usando NumPy.
-    """
-    # 1. Convertimos la lista de logits a un array de NumPy
-    logits_arr = np.array(logits, dtype=float)
+    scores = np.asarray(logits, dtype=float)
+    masked_scores = np.full(scores.shape, -np.inf)
+
+    valid_ids = sorted({
+        token_id
+        for token_id in allowed_token_ids
+        if isinstance(token_id, int)
+        and 0 <= token_id < len(scores)
+    })
+
+    if not valid_ids:
+        raise ValueError("No valid tokens are allowed.")
+
+    masked_scores[valid_ids] = scores[valid_ids]
+
+    return masked_scores
 
 
-    #   dependiendo del estado creamos una u otra mascara:
-    if get_state(translation_tokens):
-        # Impares (dentro de string): Blacklist (copiamos y prohibimos estructura)
-        logits_mascarados = logits_arr.copy()
-        logits_mascarados[structure_ids] = -np.inf
-    else:
-        # 2. Creamos un array lleno de -infinito del mismo tamaño
-        logits_mascarados = np.full_like(logits_arr, -np.inf)
-        # solo mnetemos los logits de estructura
-        logits_mascarados[structure_ids] = logits_arr[structure_ids]
+def get_allowed_next_tokens(
+    candidates: list[list[int]],
+    generated_ids: list[int]
+) -> list[int]:
+    """Find tokens that continue at least one valid candidate."""
 
-    return logits_mascarados
+    allowed_ids = set()
+
+    for candidate in candidates:
+        if candidate[:len(generated_ids)] == generated_ids:
+            if len(candidate) > len(generated_ids):
+                allowed_ids.add(candidate[len(generated_ids)])
+
+    return sorted(allowed_ids)

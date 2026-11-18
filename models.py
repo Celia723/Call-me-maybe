@@ -11,3 +11,9 @@ class FunctionDefinition(BaseModel):
 
 class FunctionCalling(BaseModel):
     prompt: str
+
+
+class FunctionCallResult(BaseModel):
+    prompt: str
+    name: str
+    parameters: dict[str, Any]
