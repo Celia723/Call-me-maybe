@@ -2,288 +2,242 @@
 import json
 import re
 from typing import Any
+import numpy as np
 
 from tqdm import tqdm
 
 from models import FunctionCalling, FunctionCallResult
-from logit_masking import mask_logits, get_allowed_next_tokens
+from logit_masking import (
+    initialize_vocab,
+    mask_logits,
+    get_allowed_tokens
+)
 
 
 def encode_text(sdk: Any, text: str) -> list[int]:
-    """Encode text and return a list of token IDs."""
+    """Convierte un texto en una lista de token IDs."""
 
     return sdk.encode(text).tolist()[0]
 
 
-def get_stop_tokens(sdk: Any) -> set[int]:
-    """Get the model's end-of-generation token IDs."""
+def get_logits(sdk: Any, input_ids: list[int]):
+    """Obtiene los logits del siguiente token."""
 
-    tokenizer = getattr(sdk, "_tokenizer", None)
+    logits = sdk.get_logits_from_input_ids(input_ids)
 
-    if tokenizer is None:
-        return set()
-
-    stop_tokens = set()
-
-    eos_id = getattr(tokenizer, "eos_token_id", None)
-
-    if isinstance(eos_id, int):
-        stop_tokens.add(eos_id)
-
-    return stop_tokens
+    return logits
 
 
-def select_function(
-    input_ids: list[int],
-    function_names: list[str],
-    sdk: Any
-) -> tuple[str, list[int]]:
-    """Select a function using token-level constraints."""
+def get_function_name(text: str) -> str | None:
+    """Extrae el nombre de la función cuando ya se ha generado."""
 
-    candidates = [
-        encode_text(sdk, name)
-        for name in function_names
-    ]
+    match = re.search(r'"name"\s*:\s*"([^"]*)"', text)
 
-    if not candidates or any(not candidate for candidate in candidates):
-        raise ValueError("Invalid function name candidates.")
+    if match:
+        return match.group(1)
 
-    generated_ids = []
-    current_ids = input_ids.copy()
-
-    max_length = max(len(candidate) for candidate in candidates)
-
-    for _ in range(max_length):
-        allowed_ids = get_allowed_next_tokens(
-            candidates,
-            generated_ids
-        )
-
-        logits = sdk.get_logits_from_input_ids(current_ids)
-
-        masked_logits = mask_logits(logits, allowed_ids)
-
-        next_token = int(masked_logits.argmax())
-
-        generated_ids.append(next_token)
-        current_ids.append(next_token)
-
-        for name, candidate in zip(function_names, candidates):
-            if generated_ids == candidate:
-                return name, current_ids
-
-    raise ValueError("Could not select a valid function.")
+    return None
 
 
-def clean_string(value: str) -> str:
-    """Remove formatting and surrounding quotation marks."""
+def get_current_parameter_type(
+    text: str,
+    function: dict[str, Any]
+) -> str | None:
+    """
+    Detecta qué parámetro se está generando y devuelve su tipo.
+    """
 
-    value = value.strip()
+    parameters_marker = '"parameters"'
 
-    value = re.sub(r"^```(?:text)?\s*", "", value)
-    value = re.sub(r"\s*```$", "", value)
+    if parameters_marker not in text:
+        return None
 
-    if value.startswith("Value:"):
-        value = value[len("Value:"):].strip()
+    parameters_text = text.split(parameters_marker, 1)[1]
 
-    if len(value) >= 2:
-        if (
-            (value[0] == "'" and value[-1] == "'")
-            or (value[0] == '"' and value[-1] == '"')
-        ):
-            value = value[1:-1]
+    # Buscamos el último nombre de parámetro seguido de dos puntos.
+    matches = list(
+        re.finditer(r'"([^"]+)"\s*:\s*', parameters_text)
+    )
 
-    return value.strip()
+    if not matches:
+        return None
+
+    last_match = matches[-1]
+    parameter_name = last_match.group(1)
+
+    # Comprobamos que el valor de ese parámetro todavía no ha terminado.
+    value_text = parameters_text[last_match.end():]
+
+    if "," in value_text or "}" in value_text:
+        return None
+
+    parameter_definition = function["parameters"].get(parameter_name)
+
+    if parameter_definition is None:
+        return None
+
+    return parameter_definition["type"]
 
 
-def generate_value(
+def is_valid_json(text: str) -> bool:
+    """Comprueba si el texto contiene un objeto JSON completo."""
+
+    try:
+        result = json.loads(text)
+        return isinstance(result, dict)
+
+    except json.JSONDecodeError:
+        return False
+
+
+def generate_json(
     prompt: str,
+    functions_str: str,
     sdk: Any,
-    max_new_tokens: int = 64
-) -> str:
-    """Generate a parameter value with the language model."""
+    vocab: dict[str, Any],
+    max_new_tokens: int = 200
+) -> dict[str, Any]:
+    """
+    Genera un objeto JSON token a token aplicando
+    restricciones según el estado de generación.
+    """
 
-    input_ids = encode_text(sdk, prompt)
+    full_prompt = (
+        "You must generate exactly one JSON object.\n"
+        "Do not include explanations or Markdown.\n"
+        "Use this exact structure:\n"
+        '{"name": "function_name", "parameters": {}}\n\n'
+        "Choose one of the available functions and provide "
+        "its required parameters.\n\n"
+        f"Available functions:\n{functions_str}\n\n"
+        f"User request: {prompt}\n\n"
+        "JSON:"
+    )
+
+    input_ids = encode_text(sdk, full_prompt)
     generated_ids = []
-    stop_tokens = get_stop_tokens(sdk)
+
+    # Relacionamos las definiciones de las funciones con sus nombres.
+    function_definitions = json.loads(functions_str)
+
+    definitions_by_name = {
+        item["name"]: item
+        for item in function_definitions
+    }
 
     for _ in range(max_new_tokens):
-        logits = sdk.get_logits_from_input_ids(input_ids)
 
-        next_token = int(
-            max(range(len(logits)), key=logits.__getitem__)
-        )
+        # 1. Obtenemos los logits del siguiente token.
+        current_ids = input_ids + generated_ids
+        logits = get_logits(sdk, current_ids)
 
-        if next_token in stop_tokens:
-            break
-
-        input_ids.append(next_token)
-        generated_ids.append(next_token)
-
+        # 2. Decodificamos todo lo generado hasta ahora.
         generated_text = sdk.decode(generated_ids)
 
-        if "\n" in generated_text:
-            break
+        # 3. Detectamos la función seleccionada.
+        function_name = get_function_name(generated_text)
 
-    return sdk.decode(generated_ids).strip()
+        function = definitions_by_name.get(function_name)
 
+        # 4. Detectamos el tipo del parámetro actual.
+        parameter_type = None
 
-def build_parameter_prompt(
-    request: str,
-    function: dict[str, Any],
-    parameter_name: str,
-    parameter_type: str
-) -> str:
-    """Build instructions for extracting one parameter."""
-
-    instructions = (
-        "Extract one argument for a function call.\n"
-        "Use the user's request as the source of truth.\n"
-        "Return only the argument value, without explanations.\n"
-        "Do not invent information.\n"
-    )
-
-    if parameter_name == "source_string":
-        instructions += (
-            "Copy the complete original text that the operation "
-            "will modify. Remove only quotation marks used as "
-            "delimiters around the text.\n"
-        )
-
-    elif parameter_name == "regex":
-        instructions += (
-            "Return a regular expression matching the requested "
-            "pattern, not an example of the matched text.\n"
-            "For all numbers, use \\d+.\n"
-            "For all vowels, use [aeiouAEIOU].\n"
-            "For an exact word, return that word as the pattern.\n"
-        )
-
-    elif parameter_name == "replacement":
-        instructions += (
-            "Return the exact replacement text requested by the user.\n"
-            "If the user asks for asterisks, return one asterisk: *.\n"
-            "Preserve the spelling and capitalization of replacement "
-            "words.\n"
-        )
-
-    elif parameter_type == "string":
-        instructions += (
-            "Return the exact requested text. Do not include quotation "
-            "marks used only to delimit the text in the request.\n"
-        )
-
-    elif parameter_type == "number":
-        instructions += (
-            "Return only the numeric value. Do not include units "
-            "or explanations.\n"
-        )
-
-    return (
-        instructions
-        + f"Function: {function['name']}\n"
-        + f"Function description: {function['description']}\n"
-        + f"User request: {request}\n"
-        + f"Parameter: {parameter_name}\n"
-        + f"Required type: {parameter_type}\n"
-        + "Value:"
-    )
-
-
-def convert_parameter(
-    raw_value: str,
-    parameter_type: str,
-    parameter_name: str
-) -> Any:
-    """Convert and validate a generated parameter."""
-
-    if parameter_type == "string":
-        return clean_string(raw_value)
-
-    if parameter_type == "number":
-        value = raw_value.strip()
-
-        match = re.search(
-            r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?",
-            value
-        )
-
-        if match is None:
-            raise ValueError(
-                f"Could not extract a number for '{parameter_name}'."
+        if function is not None:
+            parameter_type = get_current_parameter_type(
+                generated_text,
+                function
             )
 
-        return json.loads(match.group())
+        # 5. Seleccionamos la categoría de tokens permitidos.
+        allowed_ids = get_allowed_tokens(
+            generated_text,
+            parameter_type,
+            vocab
+        )
 
-    raise ValueError(
-        f"Unsupported parameter type: {parameter_type}"
+        if len(generated_ids) < 20:
+            print("\n--- DEBUG ---")
+            print("Texto generado:", repr(generated_text))
+            print("Función detectada:", function_name)
+            print("Tipo de parámetro:", parameter_type)
+            print("Tokens permitidos:", len(allowed_ids))
+
+        # 6. Aplicamos la máscara a los logits.
+        restricted_logits = mask_logits(logits, allowed_ids)
+
+        # 7. Seleccionamos el token permitido con mayor logit.
+        next_token = int(np.argmax(restricted_logits))
+
+        generated_ids.append(next_token)
+
+        # 8. Comprobamos si ya tenemos un JSON completo.
+        generated_text = sdk.decode(generated_ids)
+
+        if is_valid_json(generated_text):
+            return json.loads(generated_text)
+
+    raise RuntimeError(
+        "The model did not generate a complete JSON object "
+        "within the maximum number of tokens."
     )
 
 
-def generate_parameters(
-    request: str,
-    function: dict[str, Any],
-    sdk: Any
-) -> dict[str, Any]:
-    """Generate all parameters required by the selected function."""
-
-    parameters = {}
-
-    for name, schema in function["parameters"].items():
-        parameter_type = schema["type"]
-
-        prompt = build_parameter_prompt(
-            request,
-            function,
-            name,
-            parameter_type
-        )
-
-        raw_value = generate_value(prompt, sdk)
-
-        parameters[name] = convert_parameter(
-            raw_value,
-            parameter_type,
-            name
-        )
-
-    return parameters
-
-
-def validate_parameters(
-    parameters: dict[str, Any],
-    function: dict[str, Any]
+def validate_result(
+    result: dict[str, Any],
+    function_definitions: dict[str, dict[str, Any]]
 ) -> None:
-    """Validate parameter names and primitive types."""
+    """Valida el nombre de función y sus parámetros."""
 
+    if set(result.keys()) != {"name", "parameters"}:
+        raise ValueError("The generated JSON has an invalid structure.")
+
+    function_name = result["name"]
+
+    if function_name not in function_definitions:
+        raise ValueError(
+            f"Unknown function: {function_name}"
+        )
+
+    function = function_definitions[function_name]
+    parameters = result["parameters"]
     schema = function["parameters"]
 
-    if set(parameters) != set(schema):
+    if not isinstance(parameters, dict):
+        raise ValueError("Parameters must be a JSON object.")
+
+    if set(parameters.keys()) != set(schema.keys()):
         raise ValueError(
-            f"Parameter names do not match function '{function['name']}'."
+            f"Parameter names do not match function '{function_name}'."
         )
 
     for name, definition in schema.items():
+
         expected_type = definition["type"]
         value = parameters[name]
 
         if expected_type == "string":
             valid = isinstance(value, str)
 
-        elif expected_type == "number":
+        elif expected_type in ("integer", "int"):
+            valid = isinstance(value, int) and not isinstance(value, bool)
+
+        elif expected_type in ("float", "number"):
             valid = (
                 isinstance(value, (int, float))
                 and not isinstance(value, bool)
             )
 
+        elif expected_type == "boolean":
+            valid = isinstance(value, bool)
+
         else:
             raise ValueError(
-                f"Unsupported type '{expected_type}' for '{name}'."
+                f"Unsupported parameter type: {expected_type}"
             )
 
         if not valid:
             raise ValueError(
-                f"Invalid value type for parameter '{name}'."
+                f"Invalid type for parameter '{name}'."
             )
 
 
@@ -293,55 +247,47 @@ def make_constrained_generation(
     nombres: list[str],
     sdk: Any
 ) -> list[dict[str, Any]]:
-    """Generate function calls and validate their parameters."""
+    """Genera y valida las llamadas a funciones."""
 
-    function_definitions = json.loads(functions_str)
+    function_definitions_list = json.loads(functions_str)
 
     definitions_by_name = {
-        function["name"]: function
-        for function in function_definitions
+        item["name"]: item
+        for item in function_definitions_list
     }
 
     if set(nombres) != set(definitions_by_name):
         raise ValueError(
-            "Function names do not match the supplied definitions."
+            "Function names do not match their definitions."
         )
+
+    # Inicializamos el vocabulario una sola vez.
+    first_prompt = "Initialize vocabulary"
+    initial_ids = encode_text(sdk, first_prompt)
+    initial_logits = get_logits(sdk, initial_ids)
+    vocab_size = len(initial_logits)
+
+    vocab = initialize_vocab(sdk, vocab_size)
 
     results = []
 
     for item in tqdm(natural_text, desc="Generating function calls"):
-        prompt = (
-            "Choose the function that best matches the request.\n"
-            "Choose only one of the available function names.\n\n"
-            f"Available functions:\n{functions_str}\n\n"
-            f"User request: {item.prompt}\n"
-            "Function name:"
-        )
 
-        input_ids = encode_text(sdk, prompt)
-
-        selected_name, _ = select_function(
-            input_ids,
-            nombres,
-            sdk
-        )
-
-        function = definitions_by_name[selected_name]
-
-        parameters = generate_parameters(
+        result = generate_json(
             item.prompt,
-            function,
-            sdk
+            functions_str,
+            sdk,
+            vocab
         )
 
-        validate_parameters(parameters, function)
+        validate_result(result, definitions_by_name)
 
-        result = FunctionCallResult(
+        function_result = FunctionCallResult(
             prompt=item.prompt,
-            name=selected_name,
-            parameters=parameters
+            name=result["name"],
+            parameters=result["parameters"]
         )
 
-        results.append(result.model_dump())
+        results.append(function_result.model_dump())
 
     return results
